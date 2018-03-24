@@ -1,0 +1,19 @@
+# Use this file to specify parameters, that do not have default values.
+# YAML Files can also be helpfull if you want to save parameters for different use-cases.
+backward_cost : 5.0
+forward_cost : 5.0
+steer_cost : 0.0
+reverse_cost : 9.0
+steer_change_cost : 11.0
+collision_free : 44.0
+heuristic_cost : 5.0
+coeff_distance_to_obstacle : 0.8
+coeff_distance_to_goal : 0.6
+show_flag : False
+start_pose_x : 20
+start_pose_y : 20
+start_pose_theta: 0.5
+goal_pose_x : 30
+goal_pose_y : 30
+scene : 2
+map_resolution : 0.1

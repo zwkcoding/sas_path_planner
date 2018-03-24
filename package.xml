@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>sas_space_explore</name>
+  <version>0.0.1</version>
+  <description>The sas_space_explore package</description>
+  <maintainer email="zhouwk33@gmail.com">kevin</maintainer>
+  <license>MPL</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>grid_map_ros</depend>
+  <depend>internal_grid_map</depend>
+  <depend>nav_msgs</depend>
+  <depend>opt_utils</depend>
+  <depend>car_model</depend>
+  <depend>roscpp</depend>
+  <depend>roslib</depend>
+  <depend>rospy</depend>
+  <depend>rosparam_handler</depend>
+  <depend>dynamic_reconfigure</depend>
+
+</package>
