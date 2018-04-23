@@ -15,9 +15,8 @@
 #include "sas_space_explore/sas_explore.hpp"
 
 namespace hmpl {
-SasExplore::SasExplore(hmpl::InternalGridMap &gmap, bool display_flag)
-    : internal_grid_(gmap),
-      display_cv_(display_flag),
+SasExplore::SasExplore()
+    : display_cv_(false),
       start_(),
       goal_(),
       coeff_distance_to_obstacle_(0.8),
@@ -40,7 +39,7 @@ SasExplore::SasExplore(hmpl::InternalGridMap &gmap, bool display_flag)
       car_body_(),
       f_goal_(std::numeric_limits<double>::infinity()),
       guarantee_heading_(false),
-      effective_threshold_dis_(0.5),
+      effective_threshold_dis_(1),
       max_primitive_length_(14),
       min_primitive_length_(0.5),
       search_scale_map_(nullptr),
@@ -50,31 +49,19 @@ SasExplore::SasExplore(hmpl::InternalGridMap &gmap, bool display_flag)
       height_(),
       closed_() {
 
-    effective_zone_scale_factor_ = this->internal_grid_.maps.getResolution();  // adapt to different map resolution
-    // allocate the image
-    int rows = this->internal_grid_.maps.getSize()(0);
-    int cols = this->internal_grid_.maps.getSize()(1);
-
-    this->display_ = cv::Mat(rows, cols, CV_8UC3, cv::Scalar(255, 255, 255));
-    for (int i = 0; i < display_.cols; i++) {
-      for (int j = 0; j < display_.rows; j++) {
-        if (0 == internal_grid_.maps.at("obstacle", grid_map::Index(j, i))) {
-          cv::Vec3b intensity(0, 0, 0);
-          this->display_.at<cv::Vec3b>(j, i) = intensity;
-        }
-      }
-    }
-  // create window
-  cv::namedWindow(window_name_, 0);
-
   // initialize cost factor in path
-  cost_factor_.backward_cost = 5.0;
-  cost_factor_.forward_cost = 5.0;
-  cost_factor_.steer_cost = 5.0;
-  cost_factor_.reverse_cost = 40.0;
-  cost_factor_.steer_change_cost = 25.0;
+  cost_factor_.reverse_cost = 3.0;
+  cost_factor_.steer_change_cost = 2.0;
   cost_factor_.collision_free = 3;
   cost_factor_.heuristic_cost = 5.0;
+
+  ros::NodeHandle private_nh_("~");
+  int angle_size, heading_size;
+  private_nh_.param<int>("angle_size", angle_size, 32);
+  private_nh_.param<int>("heading_size", heading_size, 32);
+
+    // Initialize sas planner
+  InitPlanner(heading_size, angle_size);
 
 }
 
@@ -123,9 +110,7 @@ void SasExplore::InitPlanner(int directions, int steers) {
             << "max_radius : " << wheelbase_ / tan(motion_primitives_.m_min_steer_step));
 
   max_primitive_length_ = motion_primitives_.GetMaximumStepLength();
-
-  InitSearchMap();
-  ROS_DEBUG("search map initialize finish");
+    ROS_DEBUG("search map initialize finish");
 }
 
 void SasExplore::InitCarGeometry(sas_element::CarParameter &car_body) {
@@ -180,14 +165,23 @@ void SasExplore::InitSearchMap() {
 void SasExplore::StartSearchFromMap(hmpl::InternalGridMap &gridMap,
                                     const Pose2D &start,
                                     const Pose2D &goal) {
+  static bool initialized_flag = false;
+
   // update the grid reference
+    // todo copy
   internal_grid_ = gridMap;
+
+    if(!initialized_flag) {
+        InitSearchMap();
+        effective_zone_scale_factor_ = this->internal_grid_.maps.getResolution();  // adapt to different map resolution
+        initialized_flag = true;
+    }
+
   // copy the new start pose
   start_ = start;
   // save the next goal pose
   goal_ = goal;
-  //clear
-  path_.clear();
+
 
   grid_map::Position start_pos(start.position.x, start.position.y);
   grid_map::Position goal_pos(goal.position.x, goal.position.y);
@@ -203,9 +197,26 @@ void SasExplore::StartSearchFromMap(hmpl::InternalGridMap &gridMap,
         }
     }
 
+    // allocate the image
+    if (this->display_cv_) {
+
+        int rows = this->internal_grid_.maps.getSize()(0);
+        int cols = this->internal_grid_.maps.getSize()(1);
+
+        this->display_ = cv::Mat(rows, cols, CV_8UC3, cv::Scalar(255, 255, 255));
+        for (int i = 0; i < display_.cols; i++) {
+            for (int j = 0; j < display_.rows; j++) {
+                if (0 == internal_grid_.maps.at("obstacle", grid_map::Index(j, i))) {
+                    cv::Vec3b intensity(0, 0, 0);
+                    this->display_.at<cv::Vec3b>(j, i) = intensity;
+                }
+            }
+        }
+
+    }
+
   if (!SasSearch()) {
-    ROS_WARN("Could no find a feasible path connecting "
-                 "the start and goal poses!");
+    ROS_WARN("Could no find a feasible path ");
     return;
   }
 }
@@ -226,21 +237,31 @@ bool SasExplore::SasSearch() {
   if (!reversed_search_) {
     start_node.movement = 1;
     start_node.primitive_node_state.beginning_heading_index = cvFloor(start_.orientation / motion_primitives_.m_min_orientation_angle);
-    ROS_INFO_STREAM("Start node beginning heading index : " << start_node.primitive_node_state.beginning_heading_index);
     goal_node.primitive_node_state.beginning_heading_index = cvFloor(goal_.orientation / motion_primitives_.m_min_orientation_angle);
+
   } else {
     start_node.movement = -1;
     // use cvFloor not cvceil, avoid orientation_index >= 32
     start_node.primitive_node_state.beginning_heading_index = cvFloor(goal_.orientation / motion_primitives_.m_min_orientation_angle);
     goal_node.primitive_node_state.beginning_heading_index = cvFloor(start_.orientation / motion_primitives_.m_min_orientation_angle);
   }
-  // show start and goal
+
+  ROS_INFO("Start node: (%f, %f, %d) ", start_pos.x, start_pos.y, start_node.primitive_node_state.beginning_heading_index);
+  ROS_INFO("Goal node: (%f, %f, %d) ", end_pos.x, end_pos.y, goal_node.primitive_node_state.beginning_heading_index);
+
+
+    // show start and goal
   if (this->display_cv_) {
     display_.copyTo(overlay_);
     DrawStartAndEnd(&overlay_, start_pos, end_pos);
+    // create window
+    cv::namedWindow(window_name_, 0);
     cv::imshow(window_name_, overlay_);
     cv::waitKey(1);
   }
+
+  // clear
+  path_.clear();
   // reset search space
   ResetSearchMap();
 
@@ -257,9 +278,9 @@ bool SasExplore::SasSearch() {
     auto end = std::chrono::steady_clock::now();
     double elapsed_secondes = getDurationInSecs(start, end);
     if (!display_cv_) {
-      ROS_WARN_STREAM_COND(elapsed_secondes > 10,
-                           "fail! cost time exceed 0.5 s");
-      if (elapsed_secondes > 10) {
+      ROS_WARN_STREAM_COND(elapsed_secondes > 2,
+                           "fail! cost time exceed 2 s");
+      if (elapsed_secondes > 2) {
         break;
       }
     } else {
@@ -333,7 +354,7 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
 
   for (int steering_index = 0; steering_index < temp_counter * motion_primitives_.GetSteerNum(); steering_index++) {
 
-    ROS_INFO_STREAM("STEER_INDEX : " << steering_index );
+    ROS_DEBUG_STREAM("STEER_INDEX : " << steering_index );
     // forward motion primitives
     if (steering_index < motion_primitives_.GetSteerNum()) {
       primitive_state_ptr = motion_primitives_.GetStateOfPrimitive(cpn1->primitive_node_state.beginning_heading_index, steering_index);
@@ -364,7 +385,7 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
         primitive_state_ptr->steering_radius != 0) {
       if (steering_index < motion_primitives_.GetSteerNum()) {
         steering_index = motion_primitives_.GetSteerNum() - 1;
-        ROS_INFO_STREAM("current node violate nonholinomic constraint");
+        ROS_DEBUG_STREAM("current node violate nonholinomic constraint");
         continue; // continue to consider reverse steering movement
       } else {
         break;
@@ -396,47 +417,52 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
     double time_duration_improved = hmpl::getDurationInSecs(start, end);
 
     if (-1 == clear_cost) {
-      ROS_INFO("Clearance checking failed or checking states is out of map");
+      ROS_DEBUG("Clearance checking failed or checking states is out of map");
       continue;
     } else {
       clear_cost  = cost_factor_.collision_free * clear_cost;
-      npn1->g_cost -=  clear_cost;
+//      npn1->g_cost -=  clear_cost;
     }
 
     double dist2goal = npn1->vehicle_center_position.Distance(gpn.vehicle_center_position);
 
     double length = primitive_state_ptr->arc_length * npn1->current_zoom;
     // calculate arc_length cost
-    double move_cost = length * ((1 == npn1->movement) ? cost_factor_.forward_cost :
-                                   cost_factor_.backward_cost);
-    npn1->g_cost += move_cost;
-
+//    double move_cost = length * ((1 == npn1->movement) ? cost_factor_.forward_cost :
+//                                   cost_factor_.backward_cost);
+//    npn1->g_cost += move_cost;
+//
     double delta_steer = fabs(primitive_state_ptr->delta_heading_radian);
     double delta_heading_cost = cost_factor_.steer_change_cost * delta_steer;
-    npn1->g_cost += delta_heading_cost;
+//    npn1->g_cost += delta_heading_cost;
+//
+//    double reverse_cost = 0;
+//    if (npn1->movement != cpn1->movement) {
+//        reverse_cost = cost_factor_.reverse_cost * length;
+//        npn1->g_cost += reverse_cost;
+//    }
 
-    double reverse_cost = 0;
-    if (npn1->movement != cpn1->movement) {
-        reverse_cost = cost_factor_.reverse_cost * length;
-        npn1->g_cost += reverse_cost;
-    }
+      double move_cost = length;
+      if(abs(delta_steer) > 20 * M_PI / 180)
+      move_cost *=  cost_factor_.steer_change_cost;
+      if (npn1->movement != cpn1->movement) {
+          move_cost *= cost_factor_.reverse_cost;
+      }
 
-    npn1->g_cost += cpn1->g_cost;
+
+    npn1->g_cost = cpn1->g_cost + move_cost;
     double heuristic_cost = cost_factor_.heuristic_cost * dist2goal;
     npn1->f_cost = npn1->g_cost + heuristic_cost;
 
-    ROS_WARN_STREAM_THROTTLE( 0.1,  "clear cost : " << clear_cost << '\n' <<
-                                    "movement cost : " <<  move_cost << '\n' <<
-                                    "delta_heading cost : " << delta_heading_cost << '\n' <<
-                                    "reverse cost : " << reverse_cost << '\n' <<
-                                    "heuristic cost : " << heuristic_cost);
+    ROS_WARN_STREAM_THROTTLE( 1, "movement cost : " <<  move_cost << '\n' <<
+                                                    "heuristic cost : " << heuristic_cost);
 
     // decide next node's scale factor
     double effective_zone = SetZoomFactorWithEffectiveZone(npn1, dist2goal);
 
     // important for effective zone notion
     if (NodeExistInSearchedEfficientZone(*npn1)) {
-      ROS_INFO("current node has been searched!");
+      ROS_DEBUG("current node has been searched!");
       continue;
     } else {
       // label the effective-zone of current node  with g-cost
@@ -464,7 +490,8 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
     // check whether reach goal pose
     if (dist2goal < effective_threshold_dis_) {
       if (guarantee_heading_ == true) {
-        if (npn1->primitive_node_state.beginning_heading_index == gpn.primitive_node_state.beginning_heading_index) {
+        if (abs(npn1->primitive_node_state.beginning_heading_index -
+                        gpn.primitive_node_state.beginning_heading_index) < 5) {
           gpn.parentnode = npn1;
           gpn.index = npn1->index + 1;
           this->f_goal_ = std::min(this->f_goal_, npn1->f_cost);
@@ -477,7 +504,7 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
         this->f_goal_ = std::min(this->f_goal_, npn1->f_cost);
         ROS_INFO("reach goal position!");
         // remove the nodes
-        ROS_WARN_STREAM("next top_open : " << best_open_.size() << "  closed : "
+        ROS_DEBUG_STREAM("next top_open : " << best_open_.size() << "  closed : "
                                             << closed_.size() << '\n');
         return true;
       }
@@ -798,8 +825,6 @@ void SasExplore::RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &p
 }
 
 void SasExplore::UpdateParams(sas_space_explore::SearchParameters parameters) {
-  cost_factor_.forward_cost = parameters.forward_cost;
-  cost_factor_.backward_cost = parameters.backward_cost;
   cost_factor_.steer_change_cost = parameters.steer_change_cost;
   cost_factor_.collision_free = parameters.collision_free;
   cost_factor_.reverse_cost = parameters.reverse_cost;

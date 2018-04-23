@@ -6,8 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Grid1
-        - /Map1
         - /mofied path1
         - /mofied path1/Offset1
       Splitter Ratio: 0.5
@@ -38,7 +36,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
-      Enabled: false
+      Enabled: true
       Line Style:
         Line Width: 0.0299999993
         Value: Lines
@@ -50,17 +48,25 @@ Visualization Manager:
         Z: 0
       Plane: XY
       Plane Cell Count: 160
-      Reference Frame: map
-      Value: false
+      Reference Frame: odom
+      Value: true
     - Alpha: 0.699999988
       Class: rviz/Map
       Color Scheme: map
       Draw Behind: false
       Enabled: true
       Name: Map
-      Topic: /sas_space_explore_node/grid_map
+      Topic: /global_map
       Unreliable: false
       Use Timestamp: false
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /vehicle_in_global
+      Name: Marker
+      Namespaces:
+        global_map/footprint: true
+      Queue Size: 100
       Value: true
     - Alpha: 0.100000001
       Buffer Length: 1
@@ -82,13 +88,13 @@ Visualization Manager:
       Radius: 0.0299999993
       Shaft Diameter: 0.100000001
       Shaft Length: 0.100000001
-      Topic: /sas_space_explore_node/result_path
+      Topic: /result_path
       Unreliable: false
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -108,7 +114,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: 0.00500006694
+      Angle: 0
       Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
@@ -118,11 +124,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Scale: 2.94158006
+      Scale: 8.06653214
       Target Frame: map
       Value: TopDownOrtho (rviz)
-      X: -1.39945364
-      Y: 7.29155159
+      X: 0
+      Y: 0
     Saved: ~
 Window Geometry:
   Displays:

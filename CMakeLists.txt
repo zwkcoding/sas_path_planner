@@ -72,3 +72,9 @@ add_dependencies(${PROJECT_NAME}_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}_node
     ${linked_libs}
 )
+
+add_executable(get_plan_server_node
+        src/sas_explore/get_plan_server_node.cpp)
+target_link_libraries(get_plan_server_node
+        ${linked_libs})
+

@@ -31,7 +31,7 @@ namespace hmpl {
 class SasExplore {
  public:
     // basic constructor for eigen grid map
-    SasExplore(hmpl::InternalGridMap &gmap, bool display_flag = false);
+    SasExplore();
     // basic destructor
     ~SasExplore();
 
@@ -43,12 +43,7 @@ class SasExplore {
      */
     void StartSearchFromMap(hmpl::InternalGridMap &gridmap, const Pose2D &start,
                             const Pose2D &goal);
-    /**
-     * Initialize car parameter, motion primitive and so no
-     * @param directions numbers of heading solution angle
-     * @param steers  numbers of steering solution angle
-     */
-    void InitPlanner(int directions, int steers);
+
     // return unit arc length sampling curves
     std::vector<hmpl::State2D> &GetPath() {
         return this->path_;
@@ -61,7 +56,7 @@ class SasExplore {
 
 private:
     // instance first
-    hmpl::InternalGridMap &internal_grid_;
+    hmpl::InternalGridMap internal_grid_;
     // whether display internal image
     bool display_cv_;
     // map resolution
@@ -146,6 +141,12 @@ private:
     double max_primitive_length_;
     // min length of primitive curve: Zero steer
     double min_primitive_length_;
+    /**
+    * Initialize car parameter, motion primitive and so no
+    * @param directions numbers of heading solution angle
+    * @param steers  numbers of steering solution angle
+    */
+    void InitPlanner(int directions, int steers);
     /**
      * sas search algorithm
      * @return true: search success false: search fail

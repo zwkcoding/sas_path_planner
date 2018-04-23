@@ -1,53 +1,33 @@
 !!python/object/new:dynamic_reconfigure.encoding.Config
 dictitems:
-  backward_cost: 1.0
   coeff_distance_to_goal: 0.6
-  coeff_distance_to_obstacle: 0.5
-  collision_free: 0.2
-  direction_num: 32
-  enable_drive_backward: false
-  forward_cost: 1.0
-  goal_pose_theta: 0.185
-  goal_pose_x: 7.1925
-  goal_pose_y: 58.44
+  coeff_distance_to_obstacle: 0.8
+  collision_free: 1.0
+  enable_drive_backward: true
   groups: !!python/object/new:dynamic_reconfigure.encoding.Config
     dictitems:
-      backward_cost: 1.0
       coeff_distance_to_goal: 0.6
-      coeff_distance_to_obstacle: 0.5
-      collision_free: 0.2
-      direction_num: 32
-      enable_drive_backward: false
-      forward_cost: 1.0
-      goal_pose_theta: 0.185
-      goal_pose_x: 7.1925
-      goal_pose_y: 58.44
+      coeff_distance_to_obstacle: 0.8
+      collision_free: 1.0
+      enable_drive_backward: true
       groups: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
       guarantee_heading: false
-      heuristic_cost: 5.0
+      heuristic_cost: 1.0
       id: 0
       name: Default
       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
       parent: 0
-      reverse_cost: 3.0
+      reverse_cost: 2.5
       show_flag: false
-      start_pose_theta: 0.43827
-      start_pose_x: 0.4667
-      start_pose_y: 2.01
       state: true
-      steer_change_cost: 84.0
-      steer_num: 32
+      steer_change_cost: 1.5
       type: ''
     state: []
   guarantee_heading: false
-  heuristic_cost: 5.0
-  reverse_cost: 3.0
+  heuristic_cost: 1.0
+  reverse_cost: 2.5
   show_flag: false
-  start_pose_theta: 0.43827
-  start_pose_x: 0.4667
-  start_pose_y: 2.01
-  steer_change_cost: 84.0
-  steer_num: 32
+  steer_change_cost: 1.5
 state: []

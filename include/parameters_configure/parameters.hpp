@@ -11,18 +11,10 @@
 
 namespace sas_space_explore {
 struct SearchParameters {
-    // numbers of heading solution angle
-    int direction_num{};
-    // numbers of steering solution angle
-    int steer_num{};
     // collision cost
     double collision_free{};
     // cost of changed steer angle
     double steer_change_cost{};
-    // cost of backward path length
-    double backward_cost{};
-    // cost of forward path length
-    double forward_cost{};
     // cost of reversed driving direction
     double reverse_cost{};
     // cost of heuristic item
@@ -37,12 +29,6 @@ struct SearchParameters {
     bool show_flag{false};
     // enable goal heading search
     bool guarantee_heading{false};
-    double start_pose_x{};
-    double start_pose_y{};
-    double start_pose_theta{};
-    double goal_pose_x{};
-    double goal_pose_y{};
-    double goal_pose_theta{};
 
 };
 class ParametersTransfer {
