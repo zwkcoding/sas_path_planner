@@ -17,4 +17,4 @@ gen.add("show_flag", paramtype="bool",description="flag for showing opencv pictu
 #gen.add("scene", paramtype="int", default=3, description="which scene")
 #gen.add("map_resolution", paramtype="double", default=0.05, description="which scene")
 #Syntax : Package, Node, Config Name(The final name will be MyDummyConfig)
-exit(gen.generate("sas_space_explore", "sas_space_explore_node", "explore"))
+exit(gen.generate("sas_space_explore", "get_plan_server_node", "explore"))

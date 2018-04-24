@@ -19,6 +19,8 @@ find_package(catkin REQUIRED COMPONENTS
     rospy
     rosparam_handler
     dynamic_reconfigure
+    iv_explore_msgs
+    control_msgs
 )
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED yaml-cpp > 0.5)
@@ -74,7 +76,13 @@ target_link_libraries(${PROJECT_NAME}_node
 )
 
 add_executable(get_plan_server_node
-        src/sas_explore/get_plan_server_node.cpp)
+        src/sas_explore/get_plan_server_node.cpp src/parameters_configure/parameters.cpp)
+add_dependencies(get_plan_server_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_genparam)
 target_link_libraries(get_plan_server_node
         ${linked_libs})
 
+## Test for ROS service and actionlib
+add_executable(get_plan_client_node
+        tests/get_plan_client_node.cpp)
+target_link_libraries(get_plan_client_node
+        ${linked_libs})

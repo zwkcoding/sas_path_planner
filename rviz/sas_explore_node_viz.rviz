@@ -6,7 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /mofied path1
         - /mofied path1/Offset1
       Splitter Ratio: 0.5
     Tree Height: 775
@@ -65,7 +64,7 @@ Visualization Manager:
       Marker Topic: /vehicle_in_global
       Name: Marker
       Namespaces:
-        global_map/footprint: true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 0.100000001
@@ -88,8 +87,16 @@ Visualization Manager:
       Radius: 0.0299999993
       Shaft Diameter: 0.100000001
       Shaft Length: 0.100000001
-      Topic: /result_path
+      Topic: /global_path_show
       Unreliable: false
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /vehicle_in_covermap
+      Name: Marker
+      Namespaces:
+        cover_map/footprint: true
+      Queue Size: 100
       Value: true
   Enabled: true
   Global Options:
@@ -124,11 +131,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Scale: 8.06653214
+      Scale: 7.50223064
       Target Frame: map
       Value: TopDownOrtho (rviz)
-      X: 0
-      Y: 0
+      X: 9.21497631
+      Y: -9.70738125
     Saved: ~
 Window Geometry:
   Displays:

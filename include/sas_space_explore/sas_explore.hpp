@@ -17,6 +17,11 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
+#include <tf/transform_datatypes.h>
+#include <tf/transform_listener.h>
+
+#include <nav_msgs/OccupancyGrid.h>
+#include <nav_msgs/Path.h>
 #include <opt_utils/circle.hpp>
 #include <internal_grid_map/internal_grid_map.hpp>
 #include <opt_utils/utils.hpp>
@@ -24,6 +29,25 @@
 
 
 namespace hmpl {
+    inline geometry_msgs::Pose transformPose(geometry_msgs::Pose &pose, tf::Transform &tf)
+    {
+        // Convert ROS pose to TF pose
+        tf::Pose tf_pose;
+        tf::poseMsgToTF(pose, tf_pose);
+
+        // Transform pose
+        tf_pose = tf * tf_pose;
+
+        // normalize quaternion
+        tf::Quaternion q = tf_pose.getRotation().normalize();
+        tf_pose.setRotation(q);
+
+        // Convert TF pose to ROS pose
+        geometry_msgs::Pose ros_pose;
+        tf::poseTFToMsg(tf_pose, ros_pose);
+        return ros_pose;
+    }
+
 /*!
  * Space Adaptive Search(SAS) Approach for Nonholonomic Mobile
  * Robots Path Planning.
@@ -41,13 +65,16 @@ class SasExplore {
      * @param start start pose
      * @param goal  goal pose
      */
-    void StartSearchFromMap(hmpl::InternalGridMap &gridmap, const Pose2D &start,
+    bool StartSearchFromMap(hmpl::InternalGridMap &gridmap, const Pose2D &start,
                             const Pose2D &goal);
 
     // return unit arc length sampling curves
     std::vector<hmpl::State2D> &GetPath() {
         return this->path_;
     };
+
+    int getStatusCode() {return status_code_;}
+
     /**
      * update sas search algorithm parameters from parameters dynamic reconfigure module
      * @param parameters come from parameters dynamic reconfigure module
@@ -57,6 +84,8 @@ class SasExplore {
 private:
     // instance first
     hmpl::InternalGridMap internal_grid_;
+    // planner status
+    int status_code_;
     // whether display internal image
     bool display_cv_;
     // map resolution
@@ -117,6 +146,8 @@ private:
     MotionPrimitiveSet motion_primitives_;
     // resulted path
     std::vector<hmpl::State2D> path_;
+    // last resulted path
+    std::vector<hmpl::State2D> last_path_;
     // define a comparator based on value
     struct PrimitiveNodeValueComparator {
         // operator overloading
@@ -231,6 +262,16 @@ private:
     void RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &pn);
     // reset search cost map
     void ResetSearchMap();
+    bool isSingleStateCollisionFree(const hmpl::State &current);
+    bool isSingleStateCollisionFreeImproved(const hmpl::State &current);
+    bool isSinglePathCollisionFreeImproved(std::vector<hmpl::State2D> &curve);
+    bool isNearLastPath(const hmpl::State2D &pose);
+    void showFootPrint(cv::Mat *image);
+
+    //  path replan parameters
+    double offset_distance_;
+    bool allow_use_last_path_;
+
 
 };
 

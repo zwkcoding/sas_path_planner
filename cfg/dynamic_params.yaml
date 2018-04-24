@@ -2,13 +2,13 @@
 dictitems:
   coeff_distance_to_goal: 0.6
   coeff_distance_to_obstacle: 0.8
-  collision_free: 1.0
+  collision_free: 0.0
   enable_drive_backward: true
   groups: !!python/object/new:dynamic_reconfigure.encoding.Config
     dictitems:
       coeff_distance_to_goal: 0.6
       coeff_distance_to_obstacle: 0.8
-      collision_free: 1.0
+      collision_free: 0.0
       enable_drive_backward: true
       groups: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
@@ -19,15 +19,15 @@ dictitems:
       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
       parent: 0
-      reverse_cost: 2.5
+      reverse_cost: 5.0
       show_flag: false
       state: true
-      steer_change_cost: 1.5
+      steer_change_cost: 3.0
       type: ''
     state: []
   guarantee_heading: false
   heuristic_cost: 1.0
-  reverse_cost: 2.5
+  reverse_cost: 5.0
   show_flag: false
-  steer_change_cost: 1.5
+  steer_change_cost: 3.0
 state: []

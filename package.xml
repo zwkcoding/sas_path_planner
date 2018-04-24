@@ -17,5 +17,6 @@
   <depend>rospy</depend>
   <depend>rosparam_handler</depend>
   <depend>dynamic_reconfigure</depend>
-
+  <depend>iv_explore_msgs</depend>
+  <depend>control_msgs</depend>
 </package>

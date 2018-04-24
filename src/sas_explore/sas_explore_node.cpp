@@ -19,10 +19,8 @@
 #include <chrono>
 #include <tf/transform_datatypes.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include <nav_msgs/OccupancyGrid.h>
-#include <nav_msgs/Path.h>
-#include <ros/package.h>
 
+#include <ros/package.h>
 #include <grid_map_ros/grid_map_ros.hpp>
 #include <internal_grid_map/internal_grid_map.hpp>
 #include <opt_utils/utils.hpp>
