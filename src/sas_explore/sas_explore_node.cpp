@@ -103,9 +103,9 @@ int main(int argc, char **argv) {
     nh.param<double>("s_x", start_point.position.x, 15);
     nh.param<double>("s_y", start_point.position.y, 70);
     nh.param<double>("s_z", start_point.orientation, -86);
-    nh.param<double>("g_x", end_point.position.x, 15);
-    nh.param<double>("g_y", end_point.position.y, 23);
-    nh.param<double>("g_z", end_point.orientation, -90);
+    nh.param<double>("g_x", end_point.position.x, 108.3);
+    nh.param<double>("g_y", end_point.position.y, 32.9);
+    nh.param<double>("g_z", end_point.orientation, 1.559);
     start_point.position.x -= in_gm.maps.getLength().x() / 2;
     start_point.position.y -= in_gm.maps.getLength().y() / 2;
     start_point.orientation *= M_PI / 180.0;

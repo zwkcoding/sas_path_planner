@@ -15,6 +15,10 @@
      <param name="g_y" value="32.9" />
      <param name="g_z" value="1.559" />
      <param name="max_iterations" value="30000" />
+     <param name="use_wavefront_heuristic" value="true" />
+     <param name="use_euclidean_heuristic" value="false" />
+
+
    </node>
 
 

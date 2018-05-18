@@ -82,6 +82,25 @@ class SasExplore {
     void UpdateParams(sas_space_explore::SearchParameters parameters);
 
 private:
+
+    struct WaveFrontNode
+    {
+        int index_x;
+        int index_y;
+        double hc;
+
+        WaveFrontNode() {}
+        WaveFrontNode(int x, int y, double cost): index_x(x)
+                , index_y(y)
+                , hc(cost) {}
+    };
+
+    inline WaveFrontNode getWaveFrontNode(int x, int y, double cost)
+    {
+        WaveFrontNode node(x, y, cost);
+
+        return node;
+    }
     // instance first
     hmpl::InternalGridMap internal_grid_;
     // planner status
@@ -168,6 +187,8 @@ private:
     double ***search_scale_map_;
     // distance look-up table, easy to find position of effective zone
     double **distance_mask;
+    // heuristic look-up table, easy to find shortest path
+    double **heuristic_table;
     // max length of primitive curve: Zero steer primitive
     double max_primitive_length_;
     // min length of primitive curve: Zero steer
@@ -267,12 +288,20 @@ private:
     bool isSinglePathCollisionFreeImproved(std::vector<hmpl::State2D> &curve);
     bool isNearLastPath(const hmpl::State2D &pose);
     void showFootPrint(cv::Mat *image);
-
+    bool isOutOfRange(int index_x, int index_y);
+    void toIndex(double x, double y, int &index_x, int &index_y);
+    void toReal(double &x, double &y, int index_x, int index_y);
+    bool detectCollisionWaveFront(const WaveFrontNode &ref);
+    bool calcWaveFrontHeuristic();
     //  path replan parameters
     double offset_distance_;
     bool allow_use_last_path_;
+    bool use_wavefront_heuristic_;
+   bool use_euclidean_heuristic_;
     int iterations_;
 
+    ros::Publisher point_cloud_pub_;
+    ros::Publisher dis_cloud_pub_;
 };
 
 } // namespace hmpl

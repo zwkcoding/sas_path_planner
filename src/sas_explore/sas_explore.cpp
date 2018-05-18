@@ -12,6 +12,8 @@
 #include <ros/console.h>
 #include <opt_utils/logger.hpp>
 #include <opt_utils/time.hpp>
+#include <sensor_msgs/PointCloud.h>
+#include <sensor_msgs/PointCloud2.h>
 #include "sas_space_explore/sas_explore.hpp"
 
 namespace hmpl {
@@ -45,6 +47,7 @@ SasExplore::SasExplore()
       min_primitive_length_(0.5),
       search_scale_map_(nullptr),
       distance_mask(nullptr),
+      heuristic_table(nullptr),
       best_open_(),
       width_(),
       height_(),
@@ -63,6 +66,14 @@ SasExplore::SasExplore()
     private_nh_.param<bool>("allow_use_last_path", allow_use_last_path_, false);
     private_nh_.param<double>("allow_offset_distance", offset_distance_, 2);
     private_nh_.param<int>("max_iterations", iterations_, 80000);
+    private_nh_.param<bool>("use_wavefront_heuristic", use_wavefront_heuristic_, false);
+    private_nh_.param<bool>("use_euclidean_heuristic", use_euclidean_heuristic_, true);
+
+    this->point_cloud_pub_ =
+            private_nh_.advertise<sensor_msgs::PointCloud>("wavefront_cloud", 1, false);
+    this->dis_cloud_pub_ =
+            private_nh_.advertise<sensor_msgs::PointCloud2>("dis_cloud", 1, false);
+
 
     // Initialize sas planner
   InitPlanner(heading_size, angle_size);
@@ -84,6 +95,14 @@ SasExplore::~SasExplore() {
     search_scale_map_ = nullptr;
   }
 
+    if (heuristic_table != nullptr) {
+        for (int j = 0; j < height_; j++) {
+            delete[] heuristic_table[j];
+        }
+        delete[] heuristic_table;
+        heuristic_table = nullptr;
+    }
+
   int distance_mask_size = 2 * (static_cast<int>(max_primitive_length_ + 1)) + 1;
   // First delete
   if (distance_mask != nullptr) {
@@ -93,6 +112,8 @@ SasExplore::~SasExplore() {
     delete[] distance_mask;
     distance_mask = nullptr;
   }
+
+
 }
 
 void SasExplore::InitPlanner(int directions, int steers) {
@@ -152,6 +173,17 @@ void SasExplore::InitSearchMap() {
     }
   }
 
+    int ind_width_ = internal_grid_.maps.getSize()(0);
+    int ind_height_ = internal_grid_.maps.getSize()(1);
+    heuristic_table = new double *[ind_height_ * sizeof(double *)];
+    for (int y = 0; y < ind_height_; y++) {
+        heuristic_table[y] = new double[ind_width_ * sizeof(double)];
+        for (int j = 0; j < ind_width_; j++) {
+            heuristic_table[y][j] = 0;
+        }
+    }
+
+
   // Create distance look-up table
   // speed up find effectine zone scope
   int distance_mask_size = 2 * (static_cast<int>(max_primitive_length_ + 1)) + 1;
@@ -173,6 +205,12 @@ bool SasExplore::StartSearchFromMap(hmpl::InternalGridMap &gridMap,
     static bool last_result = false;
     static Pose2D last_goal;
     bool replan = true;
+
+    sensor_msgs::PointCloud2 pointcloud;
+    grid_map::GridMapRosConverter::toPointCloud(this->internal_grid_.maps,
+                                                this->internal_grid_.dis,
+                                                pointcloud);
+    this->dis_cloud_pub_.publish(pointcloud);
 
     status_code_ = 0;
 
@@ -304,8 +342,8 @@ bool SasExplore::SasSearch() {
     goal_node.primitive_node_state.beginning_heading_index = cvFloor(start_.orientation / motion_primitives_.m_min_orientation_angle);
   }
 
-  ROS_INFO("Start node: (%f, %f, %d) ", start_pos.x, start_pos.y, start_node.primitive_node_state.beginning_heading_index);
-  ROS_INFO("Goal node: (%f, %f, %d) ", end_pos.x, end_pos.y, goal_node.primitive_node_state.beginning_heading_index);
+  ROS_INFO_THROTTLE(5, "Start node: (%f, %f, %d) ", start_pos.x, start_pos.y, start_node.primitive_node_state.beginning_heading_index);
+  ROS_INFO_THROTTLE(5, "Goal node: (%f, %f, %d) ", end_pos.x, end_pos.y, goal_node.primitive_node_state.beginning_heading_index);
 
 
     // show start and goal
@@ -319,13 +357,34 @@ bool SasExplore::SasSearch() {
 
   // clear
   path_.clear();
-  // reset search space
   ResetSearchMap();
 
-  double goal2start_dis = start_.position.Distance(goal_.position);
-  start_node.f_cost = goal2start_dis;
+    if(1/*use_wavefront_heuristic_*/) {
+        // reset search space
+        // setup wavefront heursitic table
+        bool wavefront_result = calcWaveFrontHeuristic();
+        if (!wavefront_result) {
+            ROS_WARN("Goal is not reachable by wavefront checking!");
+            return false;
+        }
+    }
 
-   double effective_zone = SetZoomFactorWithEffectiveZone(&start_node, goal2start_dis);
+
+  double goal2start_dis = start_.position.Distance(goal_.position);
+//    ROS_INFO("Start euci dis : (%f) ", goal2start_dis);
+
+    int index_x, index_y;
+    toIndex(start_.position.x, start_.position.y, index_x, index_y);
+    double start_h_cost = heuristic_table[index_y][index_x];
+//    ROS_INFO("Start wave dis : (%f) ", start_h_cost);
+
+    if(use_euclidean_heuristic_)
+    start_node.f_cost = start_node.g_cost + goal2start_dis;
+    else if(use_wavefront_heuristic_)
+        start_node.f_cost = start_node.g_cost + start_h_cost;
+
+
+    double effective_zone = SetZoomFactorWithEffectiveZone(&start_node, goal2start_dis);
 
   this->best_open_.push(start_node);
   // record search cost time
@@ -510,8 +569,16 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
 
 
     npn1->g_cost = cpn1->g_cost + move_cost;
-    double heuristic_cost = cost_factor_.heuristic_cost * dist2goal;
-    npn1->f_cost = npn1->g_cost + heuristic_cost;
+      double heuristic_cost;
+      if(use_euclidean_heuristic_) {
+          heuristic_cost = cost_factor_.heuristic_cost * dist2goal;
+      }
+      else if(use_wavefront_heuristic_) {
+          int index_x, index_y;
+          toIndex(npn1->vehicle_center_position.x, npn1->vehicle_center_position.y, index_x, index_y);
+          heuristic_cost = cost_factor_.heuristic_cost * heuristic_table[index_y][index_x];
+      }
+      npn1->f_cost = npn1->g_cost + heuristic_cost;
 
 //    ROS_WARN_STREAM_THROTTLE( 1, "movement cost : " <<  move_cost << '\n' <<
 //                                                    "heuristic cost : " << heuristic_cost);
@@ -815,6 +882,14 @@ void SasExplore::ResetSearchMap() {
       }
     }
   }
+
+    int ind_width_ = internal_grid_.maps.getSize()(0);
+    int ind_height_ = internal_grid_.maps.getSize()(1);
+    for (int y = 0; y < ind_height_; y++) {
+        for (int j = 0; j < ind_width_; j++) {
+            heuristic_table[y][j] = 0;
+        }
+    }
 }
 
 
@@ -1076,6 +1151,193 @@ void SasExplore::UpdateParams(sas_space_explore::SearchParameters parameters) {
         }
 
 
+    }
+
+    bool SasExplore::isOutOfRange(int index_x, int index_y) {
+        if (index_x < 0 || index_x >= internal_grid_.maps.getSize()(0) || index_y < 0 ||
+            index_y >= internal_grid_.maps.getSize()(1))
+            return true;
+
+        return false;
+    }
+
+    void SasExplore::toIndex(double x, double y, int &index_x, int &index_y) {
+        double resolution = internal_grid_.maps.getResolution();
+        double width = internal_grid_.maps.getLength().x();
+        double height = internal_grid_.maps.getLength().y();
+        int ind_width_ = internal_grid_.maps.getSize()(0);
+        int ind_height_ = internal_grid_.maps.getSize()(1);
+        index_x = MAX(0,MIN(((x + width / 2) / resolution), ind_width_));
+        index_y = MAX(0,MIN(((y + height / 2) / resolution), ind_height_));
+   }
+
+    void SasExplore::toReal(double &x, double &y, int index_x, int index_y) {
+        double resolution = internal_grid_.maps.getResolution();
+        double width = internal_grid_.maps.getLength().x();
+        double height = internal_grid_.maps.getLength().y();
+        int ind_width_ = internal_grid_.maps.getSize()(0);
+        int ind_height_ = internal_grid_.maps.getSize()(1);
+        x = MAX( -width / 2,MIN(((index_x - ind_width_ / 2) * resolution), width / 2));
+        y = MAX( -height / 2,MIN(((index_y - ind_height_ / 2) * resolution), height / 2));
+    }
+
+    bool SasExplore::detectCollisionWaveFront(const WaveFrontNode &ref) {
+        hmpl::State current;
+        current.x = ref.index_x * internal_grid_.maps.getResolution() - width_ / 2;
+        current.y = ref.index_y * internal_grid_.maps.getResolution() - height_ / 2;
+
+        // Define the robot as square
+        // todo
+        grid_map::Position pos(current.x, current.y);
+        if (this->internal_grid_.maps.isInside(pos)) {
+            double clearance = this->internal_grid_.getObstacleDistance(pos);
+            if (clearance < wide_ ) {
+                // the big circle is not collision-free, then do an exact
+                // collision checking
+                return true;
+            } else { // collision-free
+                return false;
+            }
+        } else {  // beyond the map boundary
+            return true;
+        }
+
+
+    }
+
+
+        bool SasExplore::calcWaveFrontHeuristic() {
+            this->internal_grid_.maps.add(this->internal_grid_.wave_transform, std::numeric_limits<float>::max());
+            grid_map::Matrix& wave_layer (this->internal_grid_.maps[this->internal_grid_.wave_transform]);
+        // State update table for wavefront search
+        // Nodes are expanded for each neighborhood cells (moore neighborhood)
+        double resolution = internal_grid_.maps.getResolution();
+        static std::vector<WaveFrontNode> updates = {getWaveFrontNode(0, 1, resolution),
+                                                     getWaveFrontNode(-1, 0, resolution),
+                                                     getWaveFrontNode(1, 0, resolution),
+                                                     getWaveFrontNode(0, -1, resolution),
+                                                     getWaveFrontNode(-1, 1, std::hypot(resolution, resolution)),
+                                                     getWaveFrontNode(1, 1, std::hypot(resolution, resolution)),
+                                                     getWaveFrontNode(-1, -1,
+                                                                             std::hypot(resolution, resolution)),
+                                                     getWaveFrontNode(1, -1,
+                                                                             std::hypot(resolution, resolution)),};
+
+        // Get start index
+        int start_index_x, goal_index_x;
+        int start_index_y, goal_index_y;
+            int ind_width_ = internal_grid_.maps.getSize()(0);
+            int ind_height_ = internal_grid_.maps.getSize()(1);
+        double width = internal_grid_.maps.getLength().x();  // m
+        double height = internal_grid_.maps.getLength().y();
+        start_index_x = MAX(0,MIN(((start_.position.x + width / 2) / resolution), ind_width_));
+        start_index_y = MAX(0,MIN(((start_.position.y + height / 2) / resolution), ind_height_));
+        goal_index_x = MAX(0,MIN(((goal_.position.x + width / 2) / resolution), ind_width_));
+        goal_index_y = MAX(0,MIN(((goal_.position.y + height / 2) / resolution), ind_height_));
+        // Set start point for wavefront search
+        // This is goal for Astar search
+        heuristic_table[goal_index_y][goal_index_x] = 0;
+        WaveFrontNode wf_node(goal_index_x, goal_index_y, 1e-10);
+        std::queue<WaveFrontNode> qu;
+        qu.push(wf_node);
+
+
+        // Whether the robot can reach goal
+        bool reachable = false;
+
+        // Start wavefront search
+        while (!qu.empty()) {
+            WaveFrontNode ref = qu.front();
+            qu.pop();
+
+            WaveFrontNode next;
+            for (const auto &u : updates) {
+                next.index_x = ref.index_x + u.index_x;
+                next.index_y = ref.index_y + u.index_y;
+
+
+                // out of range OR already visited OR obstacle node
+                if (isOutOfRange(next.index_x, next.index_y) || heuristic_table[next.index_y][next.index_x] > 0)
+                    continue;
+
+                // Take the size of robot into account
+                // time costy when large free space
+
+                if (detectCollisionWaveFront(next))
+                    continue;
+
+                // Check if we can reach from start to goal
+                if (next.index_x == start_index_x && next.index_y == start_index_y)
+                    reachable = true;
+
+                // Set wavefront heuristic cost
+                next.hc = ref.hc + u.hc;
+                heuristic_table[next.index_y][next.index_x] = next.hc;
+
+                double x, y;
+                x = next.index_x * internal_grid_.maps.getResolution() - width_ / 2;
+                y = next.index_y * internal_grid_.maps.getResolution() - height_ / 2;
+//                toReal(x, y, next.index_x, next.index_y);
+                grid_map::Index goal_index;
+                grid_map::Position pose(x, y);
+                bool flag = internal_grid_.maps.getIndex(pose, goal_index);
+                if(!flag) {
+                    std::cout << "wavefront point is out of map" << '\n';
+                    continue;
+                }
+                wave_layer(goal_index(0),goal_index(1)) = next.hc;
+
+                qu.push(next);
+            }
+        }
+
+            if (1) {
+                unsigned int size_x = internal_grid_.maps.getSize()(0);
+                unsigned int size_y = internal_grid_.maps.getSize()(1);
+
+                float max = 0;
+                double inf = std::numeric_limits<float>::max();
+                const grid_map::Matrix &expl_layer(internal_grid_.maps[this->internal_grid_.wave_transform]);
+
+                for (size_t x = 0; x < size_x; ++x) {
+                    for (size_t y = 0; y < size_y; ++y) {
+                        if ((expl_layer(x, y) < inf) && (expl_layer(x, y) > max)) {
+                            max = expl_layer(x, y);
+                        }
+                    }
+                }
+
+                sensor_msgs::PointCloud cloud;
+                cloud.header.frame_id = internal_grid_.maps.getFrameId();
+                cloud.header.stamp = ros::Time::now();
+
+                geometry_msgs::Point32 point;
+                grid_map::Position pose;
+
+                for (size_t x = 0; x < size_x; ++x) {
+                    for (size_t y = 0; y < size_y; ++y) {
+                        if (expl_layer(x, y) < inf) {
+                            grid_map::Index index(x, y);
+                            internal_grid_.maps.getPosition(index, pose);
+                            point.x = pose(0);
+                            point.y = pose(1);
+                            point.z = expl_layer(x, y) / max * 10;
+
+                            cloud.points.push_back(point);
+                        }
+                    }
+                }
+                point_cloud_pub_.publish(cloud);
+            }
+
+
+
+//            this->internal_grid_.vis_->publishVisOnDemand(this->internal_grid_.maps, this->internal_grid_.wave_transform);
+
+
+
+        // End of search
+        return reachable;
     }
 
 } // namespace hmpl
