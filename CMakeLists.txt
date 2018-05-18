@@ -23,7 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
     control_msgs
 )
 find_package(OpenCV REQUIRED)
-find_package(yaml-cpp REQUIRED yaml-cpp > 0.5)
+#find_package(yaml-cpp REQUIRED yaml-cpp > 0.5)
 
 
 # Generate parameter files
@@ -47,7 +47,7 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
-    ${YAML_CPP_INCLUDE_DIRS}
+   # ${YAML_CPP_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -66,7 +66,7 @@ set(linked_libs
     ${PROJECT_NAME}
     ${catkin_LIBRARIES}
     ${OpenCV_LIBRARIES}
-    ${YAML_CPP_LIBRARIES}
+   # ${YAML_CPP_LIBRARIES}
 )
 
 add_executable(${PROJECT_NAME}_node src/sas_explore/sas_explore_node.cpp src/parameters_configure/parameters.cpp)

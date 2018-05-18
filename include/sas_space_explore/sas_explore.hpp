@@ -271,7 +271,7 @@ private:
     //  path replan parameters
     double offset_distance_;
     bool allow_use_last_path_;
-
+    int iterations_;
 
 };
 

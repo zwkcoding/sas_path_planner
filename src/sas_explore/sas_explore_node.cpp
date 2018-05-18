@@ -25,10 +25,10 @@
 #include <internal_grid_map/internal_grid_map.hpp>
 #include <opt_utils/utils.hpp>
 
-//#define USE_IMAGE
+#define USE_IMAGE
 
-hmpl::Pose2D start_point(-14.6, -9.7, 0);
-hmpl::Pose2D end_point(14.8, -8.9, 0.28);
+hmpl::Pose2D start_point(-11.2, -6.3, 0);
+hmpl::Pose2D end_point(-7.7, 7.1, 0.005);
 nav_msgs::OccupancyGrid planner_map;
 bool map_set_ = false, goal_set_ = false, start_set_ = false;
 
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
     std::string package_dir = ros::package::getPath("sas_space_explore");
     std::string base_dir = "/benchmark_file/";
     std::string img_dir = "scene_map";
-    int scene_num = 4;
+    int scene_num = 6;
     nh.param("scene", scene_num, scene_num);
     cv::Mat img_src = cv::imread(package_dir + base_dir + img_dir + std::to_string(scene_num) + ".jpg", CV_8UC1);
 
@@ -80,12 +80,12 @@ int main(int argc, char **argv) {
     in_gm.addObstacleLayerFromImage(img_src, 0.5);
     in_gm.updateDistanceLayer();
 
-    in_gm.maps.setFrameId("/map");
+    in_gm.maps.setFrameId("/odom");
     ROS_INFO("Created map with size %f x %f m (%i x %i cells), map resolution is %f",
              in_gm.maps.getLength().x(), in_gm.maps.getLength().y(),
              in_gm.maps.getSize()(0), in_gm.maps.getSize()(1), in_gm.maps.getResolution());
     ros::Publisher publisher =
-            n.advertise<nav_msgs::OccupancyGrid>("grid_map", 1, true);
+            n.advertise<nav_msgs::OccupancyGrid>("/global_map", 1, true);
 #endif
     // Create publishers and subscribers
     ros::Publisher path_publisher =
@@ -100,6 +100,18 @@ int main(int argc, char **argv) {
     hmpl::SasExplore sas_planner;
     hmpl::InternalGridMap igm_;
 
+    nh.param<double>("s_x", start_point.position.x, 15);
+    nh.param<double>("s_y", start_point.position.y, 70);
+    nh.param<double>("s_z", start_point.orientation, -86);
+    nh.param<double>("g_x", end_point.position.x, 15);
+    nh.param<double>("g_y", end_point.position.y, 23);
+    nh.param<double>("g_z", end_point.orientation, -90);
+    start_point.position.x -= in_gm.maps.getLength().x() / 2;
+    start_point.position.y -= in_gm.maps.getLength().y() / 2;
+    start_point.orientation *= M_PI / 180.0;
+    end_point.position.x -= in_gm.maps.getLength().x() / 2;
+    end_point.position.y -= in_gm.maps.getLength().y() / 2;
+    end_point.orientation *= M_PI / 180.0;
     // Publisher in a loop.
     ros::Rate loop_rate(100.0);
     while (nh.ok()) {
@@ -124,7 +136,7 @@ int main(int argc, char **argv) {
             parameters_transfer.ResetUpdateFlag();
         }
 
-        if (!map_set_ || !start_set_ || !goal_set_) {
+        if (!map_set_ /*|| !start_set_ || !goal_set_*/) {
             loop_rate.sleep();
             continue;
         }

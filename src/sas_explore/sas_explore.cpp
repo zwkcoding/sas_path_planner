@@ -20,19 +20,19 @@ SasExplore::SasExplore()
       start_(),
       goal_(),
       status_code_(0),
-      coeff_distance_to_obstacle_(0.8),
+      coeff_distance_to_obstacle_(2),
       coeff_distance_to_goal_(0.6),
       window_name_("sas_display"),
       reversed_search_(false),
-      enable_drive_backward_(false),
-      wheelbase_(2.8448),
-      wide_(2.5),
+      enable_drive_backward_(true),
+      wheelbase_(2.84),
+      wide_(2.45),
       track_(1.5748),
-      max_steer_(35 / 180.0 * M_PI),
-      direction_fraction_(64),
+      max_steer_(30 / 180.0 * M_PI),
+      direction_fraction_(32),
       steer_fraction_(32),
-      end_to_center_(1.09),
-      front_to_center_(3.81),
+      end_to_center_(1.0),
+      front_to_center_(3.9),
       effective_zone_scale_factor_(0.2),
       display_(),
       overlay_(),
@@ -51,17 +51,18 @@ SasExplore::SasExplore()
       closed_() {
 
   // initialize cost factor in path
-  cost_factor_.reverse_cost = 3.0;
-  cost_factor_.steer_change_cost = 2.0;
-  cost_factor_.collision_free = 3;
-  cost_factor_.heuristic_cost = 5.0;
+  cost_factor_.reverse_cost = 5;
+  cost_factor_.steer_change_cost = 2.5;
+  cost_factor_.collision_free = 0;
+  cost_factor_.heuristic_cost = 1;
 
   ros::NodeHandle private_nh_("~");
   int angle_size, heading_size;
   private_nh_.param<int>("angle_size", angle_size, 32);
   private_nh_.param<int>("heading_size", heading_size, 32);
-    private_nh_.param<bool>("allow_use_last_path", allow_use_last_path_, true);
+    private_nh_.param<bool>("allow_use_last_path", allow_use_last_path_, false);
     private_nh_.param<double>("allow_offset_distance", offset_distance_, 2);
+    private_nh_.param<int>("max_iterations", iterations_, 80000);
 
     // Initialize sas planner
   InitPlanner(heading_size, angle_size);
@@ -210,11 +211,11 @@ bool SasExplore::StartSearchFromMap(hmpl::InternalGridMap &gridMap,
                 path_ = last_path_;
                 return true;
             } else {
-                ROS_INFO("Fail to use last path : collision or far away path");
+//                ROS_INFO("Fail to use last path : collision or far away path");
                 replan = true;
             }
         } else {
-            ROS_INFO("Fail to use last path : goal is not same");
+//            ROS_INFO("Fail to use last path : goal is not same");
             replan = true;
         }
     } else {
@@ -329,23 +330,23 @@ bool SasExplore::SasSearch() {
   this->best_open_.push(start_node);
   // record search cost time
   auto start = std::chrono::steady_clock::now();
+    int expand_nums = 0;
   while (!best_open_.empty()) {
-
     auto end = std::chrono::steady_clock::now();
     double elapsed_secondes = getDurationInSecs(start, end);
-    if (!display_cv_) {
-      ROS_WARN_STREAM_COND(elapsed_secondes > 0.5,
-                           "fail! cost time exceed 0.5 s");
-      if (elapsed_secondes > 0.5) {
-        break;
-      }
-    } else {
-      ROS_WARN_STREAM_COND(elapsed_secondes > 10,
-                           "fail! cost time exceed 10 s");
-      if (elapsed_secondes > 10) {
-        break;
-      }
-    }
+//    if (!display_cv_) {
+//      ROS_WARN_STREAM_COND(elapsed_secondes > 0.5,
+//                           "fail! cost time exceed 0.5 s");
+//      if (elapsed_secondes > 0.5) {
+//        break;
+//      }
+//    } else {
+//      ROS_WARN_STREAM_COND(elapsed_secondes > 10,
+//                           "fail! cost time exceed 10 s");
+//      if (elapsed_secondes > 10) {
+//        break;
+//      }
+//    }
     // pop the min element
     start_node = best_open_.top();
 
@@ -405,8 +406,10 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
   }
 
   sas_element::MotionPrimitiveState *primitive_state_ptr = nullptr;
+  cv::RNG G_RNG(0xFFFFFFFF);
+  cv::Scalar color = cv::Scalar(G_RNG.uniform(0, 255), G_RNG.uniform(0, 255), G_RNG.uniform(0, 255));
 
-  CvScalar color = CV_RGB(rand() % 100 + 100, rand() % 100 + 100, rand() % 100 + 100);
+//  CvScalar color = CV_RGB(rand() % 100 + 100, rand() % 100 + 100, rand() % 100 + 100);
 
   for (int steering_index = 0; steering_index < temp_counter * motion_primitives_.GetSteerNum(); steering_index++) {
 
@@ -537,14 +540,14 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
         Vector2D<double> gridmap(x, y);
         cv::Point opencv(sas_element::GridmapToOpencv(gridmap, width_, height_).x / this->internal_grid_.maps.getResolution() ,
                          sas_element::GridmapToOpencv(gridmap, width_, height_).y / this->internal_grid_.maps.getResolution());
-        cv::circle(*image, opencv, 0, color);
+        cv::circle(*image, opencv, 1, color, -1);
       }
       cv::imshow(window_name_, *image);
       cv::waitKey(1);
     }
 
     // check whether reach goal pose
-    if (dist2goal < effective_threshold_dis_) {
+    if (dist2goal < effective_threshold_dis_ || closed_.size() > iterations_) {
       if (guarantee_heading_ == true) {
         if (abs(npn1->primitive_node_state.beginning_heading_index -
                         gpn.primitive_node_state.beginning_heading_index) < 5) {
@@ -552,6 +555,8 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
           gpn.index = npn1->index + 1;
           this->f_goal_ = std::min(this->f_goal_, npn1->f_cost);
           ROS_INFO("reach goal pose!");
+          ROS_INFO_STREAM("open : " << best_open_.size() << "  closed : "
+                                                << closed_.size() << '\n');
           return true;
         }
       } else {
@@ -560,7 +565,7 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
         this->f_goal_ = std::min(this->f_goal_, npn1->f_cost);
         ROS_INFO("reach goal position!");
         // remove the nodes
-        ROS_DEBUG_STREAM("next top_open : " << best_open_.size() << "  closed : "
+        ROS_INFO_STREAM("open : " << best_open_.size() << "  closed : "
                                             << closed_.size() << '\n');
         return true;
       }
@@ -654,6 +659,11 @@ double SasExplore::ClearanceCostInPathUseCircumcircle(const sas_element::MotionP
   double start_rad = primitive_state.beginning_heading_index * motion_primitives_.m_min_orientation_angle;
   double k = 1 / node.current_zoom;  // unit arc length sampling
   double clear_cost = 0;
+
+    if (!internal_grid_.maps.isInside(grid_map::Position(node.vehicle_center_position.x,
+                                                         node.vehicle_center_position.y))) {
+        return -1;
+    }
 
   // collision detection for every state(unit arc length) in primitive_path of a motion primitive
   for (int i = primitive_state.primitive_path.size() - 1; i >= 0; i -= k) {
@@ -815,11 +825,11 @@ void SasExplore::DrawStartAndEnd(cv::Mat *image,
     // start point
     cv::Point start_pt(sas_element::GridmapToOpencv(start, width_, height_).x / this->internal_grid_.maps.getResolution() ,
                        sas_element::GridmapToOpencv(start, width_, height_).y / this->internal_grid_.maps.getResolution());
-    cv::circle(*image, start_pt, 5, cv::Scalar(0, 255, 255), -1, 8);
+    cv::circle(*image, start_pt, 8, cv::Scalar(255, 0, 0), -1, 8);
     // end point
     cv::Point end_pt(sas_element::GridmapToOpencv(end, width_, height_).x / this->internal_grid_.maps.getResolution() ,
                      sas_element::GridmapToOpencv(end, width_, height_).y / this->internal_grid_.maps.getResolution());
-    cv::circle(*image, end_pt, 5, cv::Scalar(255, 255, 0), -1, 8);
+    cv::circle(*image, end_pt, 8, cv::Scalar(255, 255, 0), -1, 8);
   }
 }
 
@@ -828,7 +838,7 @@ void SasExplore::RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &p
   path_.clear();
   sas_element::PrimitiveNode tmp = *pn.parentnode;
   //    CvScalar color = cv::Scalar(rand() % 200, rand() % 200, rand() % 200);
-  CvScalar color = cv::Scalar(0, 0, 0);
+  CvScalar color = cv::Scalar(0, 255, 0);
 
   sas_element::MotionPrimitiveState *primitive_state_ptr = nullptr;
   State2D temp_state2d;
@@ -871,22 +881,25 @@ void SasExplore::RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &p
                 sas_element::GridmapToOpencv(gridmap, width_, height_).y / this->internal_grid_.maps.getResolution());
         if (i == primitive_state_ptr->primitive_path.size() - 1) {
           int font = cv::FONT_HERSHEY_SIMPLEX;
-          cv::circle(*image, state_pt, 4, cv::Scalar(0, 255, 0));
-          cv::putText(*image, std::to_string(tmp.index), state_pt, font, 0.4, (0, 255, 0), 2, cv::LINE_AA);
+          cv::circle(*image, state_pt, 6, cv::Scalar(0, 0, 255),-1);
+//          cv::putText(*image, std::to_string(tmp.index), state_pt, font, 0.4, (0, 255, 0), 2, cv::LINE_AA);
         } else {
-          cv::circle(*image, state_pt, 1, color);
+          cv::circle(*image, state_pt, 2, color, -1);
         }
       }
     }
     tmp = *(tmp.parentnode);
   }
-  std::cout << "PATH SIZE:" << path_.size() << '\n';
+//  std::cout << "PATH SIZE:" << path_.size() << '\n';
     std::reverse(path_.begin(), path_.end());
     last_path_ = path_;
   if (display_cv_) {
-    showFootPrint(image);
     cv::imshow(window_name_, *image);
     cv::waitKey(2000);
+      showFootPrint(image);
+      cv::imshow(window_name_, *image);
+      cv::waitKey(2000);
+
   }
 }
 

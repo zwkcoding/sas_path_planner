@@ -19,7 +19,7 @@ dictitems:
       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
       parent: 0
-      reverse_cost: 4.0
+      reverse_cost: 5.0
       show_flag: true
       state: true
       steer_change_cost: 2.5
@@ -27,7 +27,7 @@ dictitems:
     state: []
   guarantee_heading: false
   heuristic_cost: 1.0
-  reverse_cost: 4.0
+  reverse_cost: 5.0
   show_flag: true
   steer_change_cost: 2.5
 state: []
