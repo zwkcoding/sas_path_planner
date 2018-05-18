@@ -32,6 +32,52 @@ hmpl::Pose2D end_point(-7.7, 7.1, 0.005);
 nav_msgs::OccupancyGrid planner_map;
 bool map_set_ = false, goal_set_ = false, start_set_ = false;
 
+void saveStatePath(std::vector<hmpl::State2D> &path) {
+    hmpl::State st;
+    std::vector<hmpl::State> state_path;
+    for (const auto &pt: path) {
+        st.x = pt.position.x;
+        st.y = pt.position.y;
+        st.z = pt.orientation;
+        state_path.push_back(st);
+    }
+
+    // let's calculate the s
+    for (std::size_t i = 1; i < state_path.size(); i++) {
+        double delta_s = std::hypot(state_path.at(i).x - state_path.at(i - 1).x,
+                                    state_path.at(i).y - state_path.at(i - 1).y);
+        state_path.at(i).s = state_path.at(i - 1).s + delta_s;
+    }
+
+    // curvature
+    for (std::size_t i = 1; i < state_path.size() - 1; i++) {
+        hmpl::Vector2D<double> pt1(state_path.at(i - 1).x, state_path.at(i - 1).y);
+        hmpl::Vector2D<double> pt2(state_path.at(i).x, state_path.at(i).y);
+        hmpl::Vector2D<double> pt3(state_path.at(i + 1).x, state_path.at(i + 1).y);
+        state_path.at(i).k = hmpl::getCurvature(pt1, pt2, pt3);
+    }
+    state_path.back().k = 0;
+
+    // this
+    // fill the dkappa  forward diff
+    for (std::size_t j = 1; j < state_path.size() - 1; j++) {
+        double delta_f = state_path.at(j).k - state_path.at(j - 1).k;
+        double delta_s = state_path.at(j).s - state_path.at(j - 1).s;
+        if (delta_s != 0) {
+            state_path.at(j).dk = delta_f / delta_s;
+        } else {
+            state_path.at(j).dk = 0;
+        }
+    }
+    state_path.back().dk = 0;
+
+    hmpl::CSVFile astar_path("sas_path.csv");
+    astar_path << "s" << "x" << "y" << "z" << "k" << "dk" << hmpl::endrow;
+    for (const auto &pt_itr: state_path) {
+        astar_path << pt_itr.s << pt_itr.x << pt_itr.y << pt_itr.z << pt_itr.k << pt_itr.dk << hmpl::endrow;
+    }
+};
+
 void startCb(const geometry_msgs::PoseWithCovarianceStampedConstPtr &start) {
     start_point.position.x = start->pose.pose.position.x;
     start_point.position.y = start->pose.pose.position.y;
@@ -167,7 +213,7 @@ int main(int argc, char **argv) {
 
         // search through the environment to get a path
         auto start = std::chrono::steady_clock::now();
-        sas_planner.StartSearchFromMap(igm_, start_point, end_point);
+        bool result = sas_planner.StartSearchFromMap(igm_, start_point, end_point);
 
         auto end = std::chrono::steady_clock::now();
         double elapsed_secondes =
@@ -177,30 +223,39 @@ int main(int argc, char **argv) {
 
         std::cout << "search time:" << elapsed_secondes << std::endl;
 
-        nav_msgs::Path path_msg;
-        geometry_msgs::PoseStamped pose;
-        path_msg.header.frame_id = igm_.maps.getFrameId();
-        path_msg.header.stamp = ros::Time::now();
-        pose.header = path_msg.header;
-        std::vector<hmpl::State2D> path = sas_planner.GetPath();
+        if (result) {
+            ROS_INFO_THROTTLE(1, "Found GOAL!");
+            nav_msgs::Path path_msg;
+            geometry_msgs::PoseStamped pose;
+            path_msg.header.frame_id = igm_.maps.getFrameId();
+            path_msg.header.stamp = ros::Time::now();
+            pose.header = path_msg.header;
+            std::vector<hmpl::State2D> path = sas_planner.GetPath();
 
-        // this is the space explore result path
+            // this is the space explore result path
 //        hmpl::CSVFile sas_path("sas_path.csv");
 //        sas_path << "s" << "x" << "y" << "z" << "k" << "dk" << hmpl::endrow;
-        double wheelbase = 2.845;
-        for (auto &point_itr : path) {
-            pose.pose.position.x = point_itr.position.x;
-            pose.pose.position.y = point_itr.position.y;
-            pose.pose.position.z = 0;
-            path_msg.poses.push_back(pose);
-            double k = tan(point_itr.phi) / wheelbase ;
+            double wheelbase = 2.845;
+            for (auto &point_itr : path) {
+                pose.pose.position.x = point_itr.position.x;
+                pose.pose.position.y = point_itr.position.y;
+                pose.pose.position.z = 0;
+                path_msg.poses.push_back(pose);
+                double k = tan(point_itr.phi) / wheelbase;
 //            sas_path << 0 << pose.pose.position.x
 //                     << pose.pose.position.y
 //                     << point_itr.orientation
 //                     << k << 0 << hmpl::endrow;
-        }
+            }
 
-        path_publisher.publish(path_msg);
+            saveStatePath(path);
+            path_publisher.publish(path_msg);
+        } else {
+            for(int i = 0; i < 10; i++) {
+                ROS_INFO("can't find path!");
+            }
+
+        }
 
         loop_rate.sleep();
     }

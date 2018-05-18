@@ -26,7 +26,8 @@
 #include <internal_grid_map/internal_grid_map.hpp>
 #include <opt_utils/utils.hpp>
 #include <parameters_configure/parameters.hpp>
-
+#include <r_s_planner/dubins.h>
+#include <r_s_planner/reeds_shepp.h>
 
 namespace hmpl {
     inline geometry_msgs::Pose transformPose(geometry_msgs::Pose &pose, tf::Transform &tf)
@@ -275,11 +276,14 @@ private:
     void DrawStartAndEnd(cv::Mat *image,
                          const Vector2D<double> &start,
                          const Vector2D<double> &end);
-    /**
-     * backtrace path linking start and goal
-     * @param image showing image
-     * @param pn goal pose used to traceback
-     */
+    void RebuildPath( const sas_element::PrimitiveNode &node,
+                      std::vector<std::vector<double> >& db_path, double length);
+
+        /**
+         * backtrace path linking start and goal
+         * @param image showing image
+         * @param pn goal pose used to traceback
+         */
     void RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &pn);
     // reset search cost map
     void ResetSearchMap();
@@ -298,8 +302,13 @@ private:
     bool allow_use_last_path_;
     bool use_wavefront_heuristic_;
    bool use_euclidean_heuristic_;
+    bool use_both_heuristic_;
+    bool allow_use_dubinshot_;
     int iterations_;
+    double goal_angle_;             // degree
 
+    ReedsSheppStateSpace rs_planner;
+    DubinsStateSpace db_planner;
     ros::Publisher point_cloud_pub_;
     ros::Publisher dis_cloud_pub_;
 };

@@ -68,6 +68,11 @@ SasExplore::SasExplore()
     private_nh_.param<int>("max_iterations", iterations_, 80000);
     private_nh_.param<bool>("use_wavefront_heuristic", use_wavefront_heuristic_, false);
     private_nh_.param<bool>("use_euclidean_heuristic", use_euclidean_heuristic_, true);
+    private_nh_.param<bool>("use_both_heuristic", use_both_heuristic_, true);
+
+    private_nh_.param<bool>("allow_use_dubinshot", allow_use_dubinshot_, true);
+    private_nh_.param<double>("goal_angle", goal_angle_, 10.0); // unit: degree
+    private_nh_.param<double>("goal_radius", effective_threshold_dis_, 1);
 
     this->point_cloud_pub_ =
             private_nh_.advertise<sensor_msgs::PointCloud>("wavefront_cloud", 1, false);
@@ -78,6 +83,8 @@ SasExplore::SasExplore()
     // Initialize sas planner
   InitPlanner(heading_size, angle_size);
 
+    rs_planner.setMinRadius(car_body_.minimum_turning_radius);
+    db_planner.setMinRadius(car_body_.minimum_turning_radius);
 }
 
 SasExplore::~SasExplore() {
@@ -413,6 +420,46 @@ bool SasExplore::SasSearch() {
     // need not to consider memory leak
     best_open_.pop();
 
+      // SEARCH WITH DUBINS SHOT
+      if(allow_use_dubinshot_) {
+          double goal_state[3] = {goal_node.vehicle_center_position.x,
+                                  goal_node.vehicle_center_position.y,
+                                  goal_node.primitive_node_state.beginning_heading_index *
+                                  motion_primitives_.m_min_orientation_angle
+          };
+          double start_state[3] = {start_node.vehicle_center_position.x,
+                                   start_node.vehicle_center_position.y,
+                                   start_node.primitive_node_state.beginning_heading_index *
+                                           motion_primitives_.m_min_orientation_angle};
+          double length = -1;
+          double step_size = 0.5;
+          std::vector<std::vector<double> > db_path;
+          rs_planner.sample(start_state, goal_state, step_size, length, db_path);
+          std::vector<hmpl::State2D> path;
+          for (auto &point_itr : db_path) {
+              hmpl::State2D state;
+              state.position.x = point_itr[0];
+              state.position.y = point_itr[1];
+              state.orientation = point_itr[2];
+              path.push_back(state);
+          }
+          if(isSinglePathCollisionFreeImproved(path)) {
+//                    for (int i = 0; i < db_path.size(); i++) {
+//                        AstarNode tmp;
+//                        tmp.x = db_path[i][0] - map_info_.origin.position.x;
+//                        tmp.y = db_path[i][1] - map_info_.origin.position.y;
+//                        tmp.theta = astar::modifyTheta(db_path[i][2]);
+//                    }
+              RebuildPath(start_node, db_path, length);
+              ROS_INFO("reach goal pose!");
+              ROS_INFO_STREAM("open : " << best_open_.size() << "  closed : "
+                                        << closed_.size() << '\n');
+              RemoveAllCNodes();
+              return true;
+          }
+      }
+
+      // SEARCH WITH FORWARD SIMULATION
     // process the current motion primitive node
     // if it's a valid path to the goal it will return true
     // otherwise we got a false value
@@ -422,7 +469,7 @@ bool SasExplore::SasSearch() {
       return (this->f_goal_ < std::numeric_limits<double>::infinity());
     }
   }
-
+  // all open is empty
   RemoveAllCNodes();
   return false;
 }
@@ -456,6 +503,12 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
   sas_element::PrimitiveNode *cpn1 = new sas_element::PrimitiveNode(cpn);
   sas_element::PrimitiveNode *npn1 = new sas_element::PrimitiveNode();
   npn1->parentnode = cpn1;
+
+    double goal_state[3] = {gpn.vehicle_center_position.x,
+                            gpn.vehicle_center_position.y,
+                            gpn.primitive_node_state.beginning_heading_index *
+                            motion_primitives_.m_min_orientation_angle
+    };
 
   // temp_counter = 1: consider 32 fractions, disable reverse movement
   // temP_counter = 2: consider 64 fractions, enable reverse movement
@@ -573,10 +626,37 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
       if(use_euclidean_heuristic_) {
           heuristic_cost = cost_factor_.heuristic_cost * dist2goal;
       }
-      else if(use_wavefront_heuristic_) {
+      else if(use_wavefront_heuristic_ || use_both_heuristic_) {
           int index_x, index_y;
           toIndex(npn1->vehicle_center_position.x, npn1->vehicle_center_position.y, index_x, index_y);
           heuristic_cost = cost_factor_.heuristic_cost * heuristic_table[index_y][index_x];
+
+
+          double start_state[3] = {npn1->vehicle_center_position.x,
+                                   npn1->vehicle_center_position.y,
+                                   npn1->primitive_node_state.beginning_heading_index *
+                                   motion_primitives_.m_min_orientation_angle};
+
+          double length = -1;
+          double step_size = 0.5;
+          std::vector<std::vector<double> > path;
+//                    if(use_back_) {
+//                        rs_planner.sample(start_state, goal_state, step_size, length, path);
+//                    } else {
+//                        db_planner.sample(start_state, goal_state, step_size, length, path);
+//                    }
+          rs_planner.sample(start_state, goal_state, step_size, length, path);
+
+          if(use_both_heuristic_) {
+              heuristic_cost = std::max(length, heuristic_cost);
+//                        if(dist2goal < 10)
+//                          heuristic_cost = length;
+//                        else
+//                            ;
+
+          }
+
+
       }
       npn1->f_cost = npn1->g_cost + heuristic_cost;
 
@@ -609,15 +689,16 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
                          sas_element::GridmapToOpencv(gridmap, width_, height_).y / this->internal_grid_.maps.getResolution());
         cv::circle(*image, opencv, 1, color, -1);
       }
-      cv::imshow(window_name_, *image);
-      cv::waitKey(1);
+     /* cv::imshow(window_name_, *image);
+      cv::waitKey(1);*/
     }
 
     // check whether reach goal pose
     if (dist2goal < effective_threshold_dis_ || closed_.size() > iterations_) {
       if (guarantee_heading_ == true) {
         if (abs(npn1->primitive_node_state.beginning_heading_index -
-                        gpn.primitive_node_state.beginning_heading_index) < 5) {
+                        gpn.primitive_node_state.beginning_heading_index) *
+                    motion_primitives_.m_min_orientation_angle <  M_PI * goal_angle_ / 180.0 ) {
           gpn.parentnode = npn1;
           gpn.index = npn1->index + 1;
           this->f_goal_ = std::min(this->f_goal_, npn1->f_cost);
@@ -637,7 +718,9 @@ bool SasExplore::ExpandNodeProcess(sas_element::PrimitiveNode &cpn,
         return true;
       }
     }
-    // copy container
+      // for db_path traceback
+      gpn.parentnode = npn1;
+      // copy container
     best_open_.push(*npn1);
   }
   closed_.push_back(*cpn1);
@@ -908,10 +991,37 @@ void SasExplore::DrawStartAndEnd(cv::Mat *image,
   }
 }
 
+void SasExplore::RebuildPath( const sas_element::PrimitiveNode &node,
+                              std::vector<std::vector<double> >& db_path, double length) {
+    RebuildPath(&overlay_, node);
+
+    State2D temp_state2d;
+    for (auto &point_itr : db_path) {
+        temp_state2d.position.x = point_itr[0];
+        temp_state2d.position.y = point_itr[1];
+        temp_state2d.orientation = point_itr[2];
+        path_.push_back(temp_state2d);
+
+        Vector2D<double> gridmap(temp_state2d.position.x, temp_state2d.position.y);
+        cv::Point state_pt(
+                sas_element::GridmapToOpencv(gridmap, width_, height_).x / this->internal_grid_.maps.getResolution(),
+                sas_element::GridmapToOpencv(gridmap, width_, height_).y / this->internal_grid_.maps.getResolution());
+
+        cv::circle(overlay_, state_pt, 2, cv::Scalar(0, 0, 255), -1);
+
+    }
+    showFootPrint(&overlay_);
+
+    if (display_cv_) {
+        cv::imshow(window_name_, overlay_);
+        cv::waitKey(2000);
+    }
+}
+
 void SasExplore::RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &pn) {
   // ending node is goal node, straight line links goal node and last node
   path_.clear();
-  sas_element::PrimitiveNode tmp = *pn.parentnode;
+  sas_element::PrimitiveNode tmp = pn;
   //    CvScalar color = cv::Scalar(rand() % 200, rand() % 200, rand() % 200);
   CvScalar color = cv::Scalar(0, 255, 0);
 
@@ -968,7 +1078,7 @@ void SasExplore::RebuildPath(cv::Mat *image, const sas_element::PrimitiveNode &p
 //  std::cout << "PATH SIZE:" << path_.size() << '\n';
     std::reverse(path_.begin(), path_.end());
     last_path_ = path_;
-  if (display_cv_) {
+  if (display_cv_ && !allow_use_dubinshot_) {
     cv::imshow(window_name_, *image);
     cv::waitKey(2000);
       showFootPrint(image);

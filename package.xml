@@ -19,4 +19,5 @@
   <depend>dynamic_reconfigure</depend>
   <depend>iv_explore_msgs</depend>
   <depend>control_msgs</depend>
+  <depend>r_s_planner</depend>
 </package>

@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
     dynamic_reconfigure
     iv_explore_msgs
     control_msgs
+    r_s_planner
 )
 find_package(OpenCV REQUIRED)
 #find_package(yaml-cpp REQUIRED yaml-cpp > 0.5)
